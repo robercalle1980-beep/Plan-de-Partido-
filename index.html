@@ -226,6 +226,14 @@
 
   <div class="panel">
     <div class="formation-select">
+      <label>Formato</label>
+      <select id="format-select" onchange="onFormatChange()">
+        <option value="7">Fútbol 7</option>
+        <option value="8" selected>Fútbol 8</option>
+        <option value="11">Fútbol 11</option>
+      </select>
+    </div>
+    <div class="formation-select">
       <label>Sistema</label>
       <select id="formation-select" onchange="onFormationChange()"></select>
     </div>
@@ -249,25 +257,51 @@
 <div id="print-sheet"></div>
 
 <script>
-/* ---------- Formaciones (fútbol 8: 1 portero + 7 de campo) ---------- */
+/* ---------- Formaciones por formato (1 portero + jugadores de campo) ---------- */
 const FORMATIONS = {
-  "1-3-3-1": [1,3,3,1],
-  "1-2-3-2": [1,2,3,2],
-  "1-3-2-2": [1,3,2,2],
-  "1-2-4-1": [1,2,4,1],
-  "1-4-2-1": [1,4,2,1],
-  "1-3-1-3": [1,3,1,3],
-  "1-2-2-3": [1,2,2,3]
+  "7": {
+    "1-3-2-1": [1,3,2,1],
+    "1-2-3-1": [1,2,3,1],
+    "1-1-3-2": [1,1,3,2],
+    "1-3-1-2": [1,3,1,2],
+    "1-2-1-3": [1,2,1,3]
+  },
+  "8": {
+    "1-3-3-1": [1,3,3,1],
+    "1-2-3-2": [1,2,3,2],
+    "1-3-2-2": [1,3,2,2],
+    "1-2-4-1": [1,2,4,1],
+    "1-4-2-1": [1,4,2,1],
+    "1-3-1-3": [1,3,1,3],
+    "1-2-2-3": [1,2,2,3]
+  },
+  "11": {
+    "1-4-4-2": [1,4,4,2],
+    "1-4-3-3": [1,4,3,3],
+    "1-3-5-2": [1,3,5,2],
+    "1-4-5-1": [1,4,5,1],
+    "1-5-3-2": [1,5,3,2],
+    "1-4-2-3-1": [1,4,2,3,1],
+    "1-3-4-3": [1,3,4,3]
+  }
 };
-const LINE_NAMES = ["Portero","Defensa","Medio","Delantero"];
+function lineNamesFor(n){
+  if(n <= 3) return ["Portero","Medio","Delantero"];
+  if(n === 4) return ["Portero","Defensa","Medio","Delantero"];
+  if(n === 5) return ["Portero","Defensa","Medio defensivo","Medio ofensivo","Delantero"];
+  const mid = Array.from({length:n-2}, (_,i) => 'Medio '+(i+1));
+  return ["Portero","Defensa",...mid,"Delantero"];
+}
 
 /* ---------- Estado ---------- */
 let players = []; // {id, name}
 let nextId = 1;
 let currentHalf = 1;
+let currentFormat = '8';
+function firstFormation(fmt){ return Object.keys(FORMATIONS[fmt])[0]; }
 let halves = {
-  1: { formation: "1-3-3-1", lineup: {} }, // lineup[posKey] = {playerId, minutes}
-  2: { formation: "1-3-3-1", lineup: {} }
+  1: { formation: firstFormation('8'), lineup: {} }, // lineup[posKey] = [{playerId, minutes}, ...]
+  2: { formation: firstFormation('8'), lineup: {} }
 };
 
 /* ---------- Persistencia (localStorage, solo este dispositivo) ---------- */
@@ -331,7 +365,19 @@ function copyFromOtherHalf(){
 /* ---------- Formación / campo ---------- */
 function populateFormationSelect(){
   const sel = document.getElementById('formation-select');
-  sel.innerHTML = Object.keys(FORMATIONS).map(k => `<option value="${k}">${k}</option>`).join('');
+  sel.innerHTML = Object.keys(FORMATIONS[currentFormat]).map(k => `<option value="${k}">${k}</option>`).join('');
+}
+function onFormatChange(){
+  currentFormat = document.getElementById('format-select').value;
+  const fresh = firstFormation(currentFormat);
+  [1,2].forEach(h => {
+    halves[h].formation = fresh;
+    halves[h].lineup = {};
+  });
+  populateFormationSelect();
+  document.getElementById('formation-select').value = fresh;
+  renderPitch();
+  renderSummary();
 }
 function onFormationChange(){
   const val = document.getElementById('formation-select').value;
@@ -342,9 +388,10 @@ function onFormationChange(){
 }
 
 function positionsForFormation(key){
-  const lines = FORMATIONS[key];
+  const lines = FORMATIONS[currentFormat][key];
   const positions = [];
   const n = lines.length;
+  const lineNames = lineNamesFor(n);
   lines.forEach((count, li) => {
     // y: portero abajo (92%), delantera arriba (10%)
     const baseY = 92 - (li * (78/(n-1)));
@@ -359,7 +406,7 @@ function positionsForFormation(key){
       }
       positions.push({
         key: li+'-'+i,
-        line: LINE_NAMES[li] || ('Línea '+(li+1)),
+        line: lineNames[li] || ('Línea '+(li+1)),
         x, y
       });
     }
@@ -511,7 +558,7 @@ function generatePrint(){
   const fechaFmt = fecha ? new Date(fecha+'T00:00:00').toLocaleDateString('es-ES', {day:'numeric', month:'long', year:'numeric'}) : '';
 
   let html = `<div class="p-title">Idea de partido — vs ${escapeHtml(rival)}</div>
-    <div class="p-meta">${lugar}${fechaFmt ? ' · ' + fechaFmt : ''}</div>`;
+    <div class="p-meta">Fútbol ${currentFormat} · ${lugar}${fechaFmt ? ' · ' + fechaFmt : ''}</div>`;
 
   [1,2].forEach(h => {
     const data = halves[h];
