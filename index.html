@@ -114,7 +114,7 @@
 
   /* Pitch */
   .pitch-wrap{
-    position:relative; width:100%; aspect-ratio: 3/4;
+    position:relative; width:100%; aspect-ratio: 3/5.2;
     background:
       radial-gradient(circle at 50% 85%, rgba(255,255,255,0.05), transparent 55%),
       repeating-linear-gradient(0deg, #16452f 0 40px, #124025 40px 80px);
@@ -123,21 +123,34 @@
   .pitch-wrap svg{position:absolute; inset:0; width:100%; height:100%;}
   .pos-marker{
     position:absolute; transform:translate(-50%,-50%);
-    width:92px; display:flex; flex-direction:column; gap:3px; align-items:center;
+    width:108px; display:flex; flex-direction:column; gap:2px; align-items:center;
+    z-index:1;
   }
+  .pos-marker:focus-within{ z-index:5; }
   .pos-marker select{
-    width:100%; font-size:11px; padding:4px 3px; border-radius:5px;
-    border:1px solid var(--border); background:rgba(13,43,31,0.92); color:var(--chalk);
+    flex:1; min-width:0; font-size:10px; padding:3px 2px; border-radius:5px;
+    border:1px solid var(--border); background:rgba(13,43,31,0.96); color:var(--chalk);
     text-align:center; text-align-last:center;
   }
   .pos-marker .min-input{
-    width:46px; font-size:11px; padding:3px; border-radius:5px;
-    border:1px solid var(--border); background:rgba(13,43,31,0.92); color:var(--chalk);
+    width:30px; flex:none; font-size:10px; padding:3px 1px; border-radius:5px;
+    border:1px solid var(--border); background:rgba(13,43,31,0.96); color:var(--chalk);
     text-align:center;
   }
-  .pos-marker .min-row{display:flex; align-items:center; gap:3px; font-size:10px; color:var(--muted);}
+  .pos-marker .min-row{display:flex; align-items:center; gap:2px; font-size:0; flex:none;}
+  .turn-row{display:flex; flex-direction:row; align-items:center; gap:2px; width:100%;}
+  .turn-sep{display:none;}
+  .turn-rm{
+    background:none; border:none; color:#e08b7d; font-size:12px; cursor:pointer;
+    padding:0; line-height:1; flex:none;
+  }
+  .add-turn{
+    margin-top:1px; width:100%; font-size:9px; padding:2px 2px; line-height:1.3;
+    background: rgba(232,161,58,0.12); border:1px dashed var(--amber); color:var(--amber);
+    border-radius:5px; cursor:pointer; text-transform:uppercase; letter-spacing:.03em;
+  }
   .pos-tag{
-    font-family:'Courier New',monospace; font-size:9px; letter-spacing:.06em;
+    font-family:'Courier New',monospace; font-size:8px; letter-spacing:.06em;
     color:var(--amber); text-transform:uppercase; text-shadow:0 1px 2px #000;
   }
 
@@ -334,9 +347,16 @@ function positionsForFormation(key){
   const n = lines.length;
   lines.forEach((count, li) => {
     // y: portero abajo (92%), delantera arriba (10%)
-    const y = 92 - (li * (78/(n-1)));
+    const baseY = 92 - (li * (78/(n-1)));
     for(let i=0; i<count; i++){
       const x = (100/(count+1)) * (i+1);
+      // con 3 o más en la misma línea, escalonamos en zigzag (banda arriba, centro abajo)
+      // para que las tarjetas de jugador/minutos no se solapen en horizontal.
+      let y = baseY;
+      if(count >= 3){
+        const zigzag = 5.5; // % de desplazamiento vertical
+        y = baseY + (i % 2 === 0 ? -zigzag : zigzag);
+      }
       positions.push({
         key: li+'-'+i,
         line: LINE_NAMES[li] || ('Línea '+(li+1)),
@@ -345,6 +365,17 @@ function positionsForFormation(key){
     }
   });
   return positions;
+}
+
+function allSelectedIds(lineup, excludePosKey, excludeTurnIdx){
+  const ids = new Set();
+  Object.entries(lineup).forEach(([k, turns]) => {
+    (turns || []).forEach((t, idx) => {
+      if(k === excludePosKey && idx === excludeTurnIdx) return;
+      if(t.playerId) ids.add(String(t.playerId));
+    });
+  });
+  return ids;
 }
 
 function renderPitch(){
@@ -362,32 +393,42 @@ function renderPitch(){
     </svg>`;
 
   const markers = positions.map(pos => {
-    const entry = lineup[pos.key] || {playerId:'', minutes:''};
-    const takenByOthers = new Set(
-      Object.entries(lineup)
-        .filter(([k,v]) => k !== pos.key && v.playerId)
-        .map(([k,v]) => String(v.playerId))
-    );
-    const availablePlayers = players.filter(p => !takenByOthers.has(String(p.id)));
-    const opts = `<option value="">—</option>` +
-      availablePlayers.map(p =>
-        `<option value="${p.id}" ${String(p.id)===String(entry.playerId)?'selected':''}>${escapeHtml(p.name)}</option>`
-      ).join('');
+    if(!lineup[pos.key]) lineup[pos.key] = [{playerId:'', minutes:''}];
+    const turns = lineup[pos.key];
+
+    const turnRows = turns.map((entry, idx) => {
+      const taken = allSelectedIds(lineup, pos.key, idx);
+      const availablePlayers = players.filter(p => !taken.has(String(p.id)));
+      const opts = `<option value="">—</option>` +
+        availablePlayers.map(p =>
+          `<option value="${p.id}" ${String(p.id)===String(entry.playerId)?'selected':''}>${escapeHtml(p.name)}</option>`
+        ).join('');
+      const removeBtn = turns.length > 1
+        ? `<button class="turn-rm" onclick="removeTurn('${pos.key}',${idx})" title="Quitar cambio">×</button>`
+        : '';
+      return `
+        <div class="turn-row">
+          <select onchange="setTurn('${pos.key}',${idx},'playerId',this.value)">
+            ${opts}
+          </select>
+          <div class="min-row">
+            min
+            <input class="min-input" type="number" min="0" max="90" value="${entry.minutes}" placeholder="0"
+                   onchange="setTurn('${pos.key}',${idx},'minutes',this.value)">
+            ${removeBtn}
+          </div>
+        </div>`;
+    }).join('<div class="turn-sep">↓ cambio</div>');
+
     return `
       <div class="pos-marker" style="left:${pos.x}%; top:${pos.y}%;">
         <span class="pos-tag">${pos.line}</span>
-        <select onchange="setLineup('${pos.key}','playerId',this.value)">
-          ${opts}
-        </select>
-        <div class="min-row">
-          min
-          <input class="min-input" type="number" min="0" max="90" value="${entry.minutes}" placeholder="0"
-                 onchange="setLineup('${pos.key}','minutes',this.value)">
-        </div>
+        ${turnRows}
+        <button class="add-turn" onclick="addTurn('${pos.key}')" title="Añadir cambio en esta posición">+ cambio</button>
       </div>`;
   }).join('');
 
-  const assignedCount = Object.values(lineup).filter(v => v.playerId).length;
+  const assignedCount = positions.filter(pos => (lineup[pos.key]||[]).some(t => t.playerId)).length;
   const pending = positions.length - assignedCount;
 
   pitch.innerHTML = svgLines + markers;
@@ -395,10 +436,25 @@ function renderPitch(){
     pending > 0 ? `Faltan ${pending} posición${pending===1?'':'es'} por asignar.` : 'Once completo para esta parte.';
 }
 
-function setLineup(posKey, field, value){
+function setTurn(posKey, turnIdx, field, value){
   const lineup = halves[currentHalf].lineup;
-  if(!lineup[posKey]) lineup[posKey] = {playerId:'', minutes:''};
-  lineup[posKey][field] = value;
+  if(!lineup[posKey]) lineup[posKey] = [{playerId:'', minutes:''}];
+  lineup[posKey][turnIdx][field] = value;
+  renderPitch();
+  renderSummary();
+}
+function addTurn(posKey){
+  const lineup = halves[currentHalf].lineup;
+  if(!lineup[posKey]) lineup[posKey] = [{playerId:'', minutes:''}];
+  lineup[posKey].push({playerId:'', minutes:''});
+  renderPitch();
+  renderSummary();
+}
+function removeTurn(posKey, turnIdx){
+  const lineup = halves[currentHalf].lineup;
+  if(lineup[posKey] && lineup[posKey].length > 1){
+    lineup[posKey].splice(turnIdx, 1);
+  }
   renderPitch();
   renderSummary();
 }
@@ -408,11 +464,13 @@ function minutesByPlayer(){
   const totals = {};
   players.forEach(p => totals[p.id] = {name: p.name, h1: 0, h2: 0});
   [1,2].forEach(h => {
-    Object.values(halves[h].lineup).forEach(entry => {
-      if(entry.playerId && totals[entry.playerId] !== undefined){
-        const mins = parseInt(entry.minutes) || 0;
-        totals[entry.playerId]['h'+h] += mins;
-      }
+    Object.values(halves[h].lineup).forEach(turns => {
+      (turns || []).forEach(entry => {
+        if(entry.playerId && totals[entry.playerId] !== undefined){
+          const mins = parseInt(entry.minutes) || 0;
+          totals[entry.playerId]['h'+h] += mins;
+        }
+      });
     });
   });
   return players.map(p => ({
@@ -459,13 +517,17 @@ function generatePrint(){
     const data = halves[h];
     const positions = positionsForFormation(data.formation);
     let rows = positions.map(pos => {
-      const entry = data.lineup[pos.key] || {};
-      return `<tr><td>${pos.line}</td><td>${escapeHtml(playerName(entry.playerId))}</td><td>${entry.minutes || '—'}'</td></tr>`;
+      const turns = data.lineup[pos.key] || [];
+      const playedTurns = turns.filter(t => t.playerId);
+      const detail = playedTurns.length
+        ? playedTurns.map(t => `${escapeHtml(playerName(t.playerId))} (${t.minutes || 0}')`).join(' → ')
+        : '—';
+      return `<tr><td>${pos.line}</td><td>${detail}</td></tr>`;
     }).join('');
     html += `<div class="p-half">
       <h3>${h}ª parte — sistema ${data.formation}</h3>
       <table class="p-table">
-        <thead><tr><th>Posición</th><th>Jugador</th><th>Minutos</th></tr></thead>
+        <thead><tr><th>Posición</th><th>Jugador(es) y minutos</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
