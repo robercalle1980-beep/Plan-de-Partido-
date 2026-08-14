@@ -190,6 +190,27 @@
     table.p-table{width:100%; border-collapse:collapse; font-size:13px;}
     table.p-table th, table.p-table td{border:1px solid #ccc; padding:5px 8px; text-align:left;}
     table.p-table th{background:#eee;}
+
+    .print-pitch{
+      position:relative; width:100%; max-width:340px; margin:8px auto 14px;
+      aspect-ratio:3/5.2; background:#f1f7f2; border:2px solid #444; border-radius:6px;
+      page-break-inside:avoid;
+    }
+    .pp-halfline{position:absolute; left:4%; right:4%; top:50%; border-top:1px solid #999;}
+    .pp-circle{
+      position:absolute; left:50%; top:50%; width:20%; aspect-ratio:1;
+      transform:translate(-50%,-50%); border:1px solid #999; border-radius:50%;
+    }
+    .pp-marker{
+      position:absolute; transform:translate(-50%,-50%); width:80px; text-align:center;
+    }
+    .pp-tag{
+      font-family:Arial, sans-serif; font-size:7px; text-transform:uppercase;
+      letter-spacing:.03em; color:#666; margin-bottom:1px;
+    }
+    .pp-turn{font-size:9.5px; font-weight:700; color:#111; line-height:1.2;}
+    .pp-min{font-weight:400; color:#444;}
+    .pp-empty{font-size:9.5px; color:#aaa;}
   }
 </style>
 </head>
@@ -551,6 +572,25 @@ function playerName(id){
   const p = players.find(pl => pl.id == id);
   return p ? p.name : '—';
 }
+function buildPrintPitch(data){
+  const positions = positionsForFormation(data.formation);
+  const markers = positions.map(pos => {
+    const turns = (data.lineup[pos.key] || []).filter(t => t.playerId);
+    const turnHtml = turns.length
+      ? turns.map((t, idx) => `<div class="pp-turn">${idx>0?'→ ':''}${escapeHtml(playerName(t.playerId))} <span class="pp-min">${t.minutes||0}'</span></div>`).join('')
+      : `<div class="pp-empty">—</div>`;
+    return `<div class="pp-marker" style="left:${pos.x}%; top:${pos.y}%;">
+      <div class="pp-tag">${pos.line}</div>
+      ${turnHtml}
+    </div>`;
+  }).join('');
+  return `<div class="print-pitch">
+    <div class="pp-halfline"></div>
+    <div class="pp-circle"></div>
+    ${markers}
+  </div>`;
+}
+
 function generatePrint(){
   const rival = document.getElementById('rival').value || 'Rival sin especificar';
   const lugar = document.getElementById('lugar').value;
@@ -573,6 +613,7 @@ function generatePrint(){
     }).join('');
     html += `<div class="p-half">
       <h3>${h}ª parte — sistema ${data.formation}</h3>
+      ${buildPrintPitch(data)}
       <table class="p-table">
         <thead><tr><th>Posición</th><th>Jugador(es) y minutos</th></tr></thead>
         <tbody>${rows}</tbody>
